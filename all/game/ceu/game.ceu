@@ -1,0 +1,177 @@
+{
+    GLOBAL_ACTIONHOLDER = new ActionHolder(@outer.plf);
+    result.plf = @outer.plf;
+}
+if outer.plf.get_music()=="none" or (outer.plf.get_music().empty() as bool) then
+    {Sound::PingusSound::stop_music();};
+else
+    call {Sound::PingusSound::play_music}(outer.plf.get_music());
+end
+var int w = {@outer.plf.get_size().width};
+var int h = {@outer.plf.get_size().height};
+var& _GroundMap gfx_map = &{new GroundMap}(w, h)
+        finalize (gfx_map) with
+            _delete(&&gfx_map);
+        end;
+var& RRect r = spawn RRect(IRRect(Rect(0,0,outer.main.rect.abs.w,outer.main.rect.abs.w), AnchorXY(AnchorX.Left(), AnchorY.Top()), &outer.main.rect, AnchorXY(AnchorX.Left(), AnchorY.Top()), _,_));
+spawn do
+    par do
+        every r.pub.changed do
+            if r.pub.off.x+r.pub.off.w/2 > 0 then
+                r.pub.off.x = -r.pub.off.w/2;
+            else/if r.pub.off.x-r.pub.off.w/2 < -w then
+                r.pub.off.x = -w+r.pub.off.w/2;
+            end
+            if r.pub.off.y+r.pub.off.h/2 > 0 then
+                r.pub.off.y = -r.pub.off.h/2;
+            else/if r.pub.off.y-r.pub.off.h/2 < -h then
+                r.pub.off.y = -h+r.pub.off.h/2;
+            end
+            call IRRect_Set(&r.pub);
+        end
+    with
+        every outer.main.rect.changed do
+            r.pub.off.w = outer.main.rect.abs.w;
+            r.pub.off.h = outer.main.rect.abs.h;
+            emit r.pub.changed;
+        end
+    end
+end
+var& RRect sm = spawn RRect(IRRect(Rect(5,-5,175,100), AnchorXY(AnchorX.Left(), AnchorY.Bottom()), &outer.main.rect, AnchorXY(AnchorX.Left(), AnchorY.Bottom()), _,_));
+var IGame game = val IGame(&outer.plf, 0,
+                     PingusCounter(0,0,0,0,
+                                   outer.plf.get_number_of_pingus(),
+                                   outer.plf.get_number_to_save()),
+                     Rect(0,0,w,h),
+                     &sm.pub,
+                     &r.pub,
+                     _, _, _, _, _);
+par do
+    do ()
+        #include "goal_manager.ceu"
+    end
+    {
+        result.saved     = @game.counter.number_of_exited;
+        result.killed    = @game.counter.number_of_killed;
+        result.total     = result.plf.get_number_of_pingus();
+        result.needed    = result.plf.get_number_to_save();
+        result.max_time  = result.plf.get_time();
+        result.used_time = @game.game_time;
+        {
+            Savegame savegame(result.plf.get_resname(), (result.saved >= result.needed) ?  Savegame::FINISHED : Savegame::ACCESSIBLE, result.used_time, result.saved);
+            SavegameManager::instance()->store(savegame);
+        }
+    };
+    escape;
+with
+    every game.dt do
+        game.game_time = game.game_time + 1;
+    end
+with
+    var Color ambient_light = val Color({@game.plf.get_ambient_light()}.r, {@game.plf.get_ambient_light()}.g, {@game.plf.get_ambient_light()}.b, {@game.plf.get_ambient_light()}.a);
+    every outer.main.redraw do
+        call {Display::s_framebuffer}:fill_rect( _Rect(0,0, outer.main.rect.abs.w,outer.main.rect.abs.h), _Color(ambient_light.r, ambient_light.g, ambient_light.b, ambient_light.a));
+    end
+with
+    data IVisible;
+    data IVisible.Aa;
+    code/await Visible (var& IVisible vis) -> FOREVER do
+        await FOREVER;
+    end
+    pool[] Visible layer_bg_0;          // background
+    spawn do
+        every outer.main.redraw do             // groundpiece
+            gfx_map.draw({Vector2i(@(game.offset.abs.x+game.offset.abs.w/2),
+                                   @(game.offset.abs.y+game.offset.abs.h/2))});
+        end
+    end
+    pool[] Visible layer_bg_1;          // liquid, hotspot, exit
+    #include "pingu/pingu.ceu"
+    pool[] Pingu pingus;
+    pool[] Visible layer_bg_2;          // hotspot
+    var uint id = 0;
+    code/await Pingu_Spawn (var int owner_id, var int x, var int y, var s8 dir) -> void do
+        if call Game_Pingu_In() then
+            outer.id = outer.id+1;
+            spawn Pingu(&outer.pingus,outer.id,owner_id,x,y,dir) in outer.pingus;
+        end
+    end
+    par do
+        do ()
+            #include "objs/objs.ceu"
+        end
+    with
+        await game.go_armageddon;
+        {Sound::PingusSound::play_sound("goodidea");};
+        var&? Pingu pingu;
+        loop pingu in pingus do
+            await game.dt;
+            await game.dt;
+            await game.dt;
+            await game.dt;
+            if pingu!.pingu.current_action != {ActionName::BOMBER} then
+                emit pingu!.pingu.go_action({ActionName::BOMBER});
+            end
+        end
+        await FOREVER;
+    with
+        do ()
+            #include "smallmap.ceu"
+        end
+    with
+        every outer.main.redraw do
+            emit game.redraw_smallmap;
+        end
+    with
+        do ()
+            #include "time_display.ceu"
+        end
+    with
+        do ()
+            #include "pingus_counter.ceu"
+        end
+    with
+        do ()
+            #include "input.ceu"
+        end
+    with
+        do ()
+            #include "actions.ceu"
+        end
+    with
+        do ()
+            #include "playfield.ceu"
+        end
+    end
+end
+code/tight Game_Pingu_In (void) -> bool do
+    if outer.game.counter.number_of_released < outer.game.counter.number_of_allowed then outer.game.counter.number_of_released = outer.game.counter.number_of_released + 1; outer.game.counter.number_of_alive    = outer.game.counter.number_of_alive    + 1;
+        escape true;
+    else
+        escape false;
+    end
+end
+code/tight Game_Pingu_Out (var int status) -> void do
+    if status == {PS_DEAD} then
+        outer.game.counter.number_of_killed = outer.game.counter.number_of_killed + 1;
+    else/if status == {PS_EXITED} then
+        outer.game.counter.number_of_exited = outer.game.counter.number_of_exited + 1;
+    end
+    outer.game.counter.number_of_alive = outer.game.counter.number_of_alive - 1;
+end
+code/tight Game_Put (var _CollisionMask&& mask,var int x, var int y, var _Groundtype__GPType type) -> void do
+    outer.gfx_map.put(mask:get_surface(), x, y);
+    outer.gfx_map.get_colmap():put(*mask, x, y, type);
+end
+code/tight Game_Remove (var _CollisionMask&& mask,var int x,var int y) -> void do
+    outer.gfx_map.remove(mask:get_surface(), x, y);
+    outer.gfx_map.get_colmap():remove(*mask, x, y);
+end
+code/tight Game_Pos_To_Smallmap (var Vector2i pst) -> Vector2i do
+    var int xx = 6;
+    var int yy = {Display::get_size}().height-105;
+    var int ww = 175;
+    var int hh = 100;
+    var Vector2i ret = val Vector2i(pst.x*outer.game.rect_smallmap.abs.w/outer.game.rect.w, pst.y*outer.game.rect_smallmap.abs.h/outer.game.rect.h);
+    escape ret;
+end

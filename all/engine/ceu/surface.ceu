@@ -1,0 +1,36 @@
+code/await Surface_from_desc (var _SpriteDescription_ptr   desc, var _ResourceModifier__Enum? mod) -> (var Surface surface) -> FOREVER
+do
+    var _ResourceModifier__Enum mod_;
+    if mod? then
+        mod_ = mod!;
+    else
+        mod_ = {ResourceModifier::ROT0};
+    end
+    {
+        try {
+            Surface surface(@(desc:filename));
+            if (@(mod_) != ResourceModifier::ROT0) {
+                surface = surface.mod(@(mod_));
+            }
+            sfc = new FramebufferSurface(new SDLFramebufferSurfaceImpl(surface.get_surface()));
+        } catch(const std::exception& err) {
+            Surface surface(Pathname("images/core/misc/404.png", Pathname::DATA_PATH));
+            sfc = new FramebufferSurface(new SDLFramebufferSurfaceImpl(surface.get_surface()));
+        }
+    }
+    var& _FramebufferSurface framebuffer = &_ID({sfc})
+        finalize (framebuffer) with
+            _delete(&&framebuffer);
+        end;
+    surface = val Surface(&framebuffer, &desc);
+    await FOREVER;
+end
+code/await Surface_from_name (var _char_const_ptr name, var _ResourceModifier__Enum? mod) -> (var& Surface surface) -> FOREVER do
+    var _SpriteDescription_ptr desc = _Resource__load_sprite_desc(name);
+    if desc == null then
+        desc = _Resource__load_sprite_desc("core/misc/404");
+    end
+    var& Surface_from_desc sfc = spawn Surface_from_desc(desc,mod);
+    surface = &sfc.surface;
+    await FOREVER;
+end
